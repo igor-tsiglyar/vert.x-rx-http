@@ -7,39 +7,19 @@ import io.vertx.core.json.JsonObject;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Repository {
 
+  @JsonProperty("name")
   private String name;
+  @JsonProperty("description")
   private String description;
   @JsonProperty("html_url")
   private String htmlUrl;
 
-  public String getName() {
-    return name;
-  }
-
-  public Repository setName(String name) {
-    this.name = name;
-    return this;
-  }
-
-  public String getDescription() {
-    return description;
-  }
-
-  public Repository setDescription(String description) {
-    this.description = description;
-    return this;
-  }
-
-  public String getHtmlUrl() {
-    return htmlUrl;
-  }
-
-  public Repository setHtmlUrl(String htmlUrl) {
-    this.htmlUrl = htmlUrl;
-    return this;
-  }
-
   public JsonObject toJson() {
     return JsonObject.mapFrom(this);
+  }
+
+  @Override
+  public String toString() {
+    return toJson().toString();
   }
 }

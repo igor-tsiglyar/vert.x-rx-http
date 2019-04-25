@@ -27,6 +27,7 @@ public class MainVerticle extends AbstractVerticle {
         .requestHandler(req -> adapter.getRepositoriesToContribute(req.getParam("language"))
           .map(Repository::toJson)
           .to(toJsonArray())
+          .doOnError(Throwable::printStackTrace)
           .subscribe(
             repos -> req.response()
               .putHeader("Content-Type", "application/json")

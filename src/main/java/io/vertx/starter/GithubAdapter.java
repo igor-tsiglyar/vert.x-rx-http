@@ -12,7 +12,7 @@ public class GithubAdapter {
 
   private static final String GITHUB_API_HOST = "api.github.com";
   private static final String SEARCH_REPOS_NEED_HELP_URI_TEMPLATE
-    = "/search/repositories?q=language:%s&sort=help+wanted";
+    = "/search/repositories?client_id=992213e727e23340951b&client_secret=ba38391d31a735e46a3767390f37236c05b6c6d3&q=language:%s&sort=help+wanted";
 
   private WebClient client;
 
