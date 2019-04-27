@@ -8,14 +8,17 @@ plugins {
 
 repositories {
   mavenCentral()
+  mavenLocal()
 }
 
 val vertxVersion = "3.7.0"
 val junitVersion = "5.3.2"
 
 dependencies {
-  implementation("io.vertx:vertx-web-client:3.7.0")
-  implementation("io.vertx:vertx-rx-java2:3.7.0")
+  implementation("io.tsiglyar:github-adapter:1.0")
+  implementation("io.vertx:vertx-mongo-client:$vertxVersion")
+  implementation("io.vertx:vertx-web-client:$vertxVersion")
+  implementation("io.vertx:vertx-rx-java2:$vertxVersion")
   implementation("io.reactivex.rxjava2:rxjava:2.2.4")
   implementation("io.vertx:vertx-core:$vertxVersion")
 
@@ -33,7 +36,7 @@ application {
   mainClassName = "io.vertx.core.Launcher"
 }
 
-val mainVerticleName = "io.vertx.starter.MainVerticle"
+val mainVerticleName = "io.tsiglyar.github.repository.suggester.GithubRepositorySuggesterVerticle"
 val watchForChange = "src/**/*.java"
 val doOnChange = "${projectDir}/gradlew classes"
 

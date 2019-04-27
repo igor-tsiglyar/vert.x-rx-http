@@ -1,5 +1,6 @@
-package io.vertx.starter;
+package io.tsiglyar.github.repository.suggester;
 
+import io.reactivex.Flowable;
 import io.vertx.reactivex.core.Vertx;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,8 +22,8 @@ class GithubAdapterTest {
 
   @Test
   void getRepositoriesNeedHelp() {
-    new GithubAdapter(vertx)
-      .getRepositoriesToContribute("Java")
+    Flowable.fromPublisher(new VertxGithubAdapter(vertx)
+      .getRepositoriesToContribute("Java"))
       .blockingIterable()
       .forEach(System.out::println);
   }
