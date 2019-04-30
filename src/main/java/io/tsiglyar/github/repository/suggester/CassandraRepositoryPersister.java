@@ -14,7 +14,6 @@ import java.util.List;
 
 import static com.datastax.driver.core.DataType.text;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.batch;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.insertInto;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.select;
 import static io.tsiglyar.github.repository.suggester.Repositories.toJson;
@@ -31,8 +30,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   public Flowable<Repository> load(String language) {
     return client.rxQueryStream(select()
       .all()
-      .from("github", "repositories")
-      .where(eq("language", language))
+      .from("github", language)
     )
       .flatMapPublisher(CassandraRowStream::toFlowable)
       .onErrorResumeNext(createKeyspace()
@@ -42,7 +40,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   }
 
   private Completable createKeyspace() {
-    return client.rxExecute(SchemaBuilder.createKeyspace("github")
+    return client.rxExecute(SchemaBuilder.createKeyspace("repositories")
       .ifNotExists()
       .with()
       .replication(new JsonObject()
@@ -52,13 +50,12 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
       .ignoreElement();
   }
 
-  private Completable createTable() {
-    return client.rxExecute(SchemaBuilder.createTable("github", "repositories")
+  private Completable createTable(String name) {
+    return client.rxExecute(SchemaBuilder.createTable("repositories", name)
       .ifNotExists()
       .addPartitionKey("name", text())
       .addColumn("description", text())
       .addColumn("url", text())
-      .addColumn("language", text())
     )
       .ignoreElement();
   }
@@ -66,8 +63,8 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   @Override
   public Completable save(String language, List<Repository> repositories) {
     return client.rxExecute(batch(repositories.stream()
-      .map(repo -> insertInto("github", "repositories")
-        .json(toJson(repo).put("language", language).encode()))
+      .map(repo -> insertInto("repositories", language)
+        .json(toJson(repo).encode()))
       .toArray(RegularStatement[]::new))
     )
       .ignoreElement();
