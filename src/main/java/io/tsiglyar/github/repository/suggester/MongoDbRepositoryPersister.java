@@ -19,7 +19,8 @@ public class MongoDbRepositoryPersister implements RepositoryPersister {
 
   public MongoDbRepositoryPersister(Vertx vertx) {
     client = MongoClient.createNonShared(vertx, new JsonObject()
-      .put("host", "localhost"));
+      .put("host", "localhost")
+      .put("waitQueueMultiple", 1000));
   }
 
   @Override
