@@ -43,6 +43,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
 
   private Completable createKeyspace() {
     return client.rxExecute(SchemaBuilder.createKeyspace("github")
+      .ifNotExists()
       .with()
       .replication(new JsonObject()
         .put("class", "SimpleStrategy")
@@ -53,6 +54,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
 
   private Completable createTable() {
     return client.rxExecute(SchemaBuilder.createTable("repositories")
+      .ifNotExists()
       .addPartitionKey("name", text())
       .addColumn("description", text())
       .addColumn("url", text())
