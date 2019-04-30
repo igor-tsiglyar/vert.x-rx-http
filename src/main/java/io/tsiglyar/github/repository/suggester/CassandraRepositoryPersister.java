@@ -54,9 +54,9 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   private Completable createTable() {
     return client.rxExecute(SchemaBuilder.createTable("repositories")
       .addPartitionKey("name", text())
-      .addStaticColumn("description", text())
-      .addStaticColumn("url", text())
-      .addStaticColumn("language", text())
+      .addColumn("description", text())
+      .addColumn("url", text())
+      .addColumn("language", text())
     )
       .ignoreElement();
   }
