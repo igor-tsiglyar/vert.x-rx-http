@@ -66,7 +66,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   @Override
   public Completable save(String language, List<Repository> repositories) {
     return client.rxExecute(batch(repositories.stream()
-      .map(repo -> insertInto("repositories")
+      .map(repo -> insertInto("github", "repositories")
         .json(toJson(repo).put("language", language).encode()))
       .toArray(RegularStatement[]::new))
     )
