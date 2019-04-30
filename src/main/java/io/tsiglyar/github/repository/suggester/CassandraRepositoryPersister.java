@@ -34,7 +34,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
     )
       .flatMapPublisher(CassandraRowStream::toFlowable)
       .onErrorResumeNext(createKeyspace()
-        .andThen(createTable())
+        .andThen(createTable(language))
         .andThen(Flowable.empty()))
       .map(row -> new Repository(row.getString("name"), row.getString("description"), row.getString("url")));
   }
