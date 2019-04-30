@@ -21,7 +21,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
   public void init(Vertx vertx, Context context) {
     super.init(vertx, context);
     this.adapter = new VertxGithubAdapter(this.vertx);
-    this.persister = new MongoDbRepositoryPersister(this.vertx);
+    this.persister = new CassandraRepositoryPersister(this.vertx);
   }
 
   @Override

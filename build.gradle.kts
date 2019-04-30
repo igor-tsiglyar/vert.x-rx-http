@@ -16,6 +16,7 @@ val junitVersion = "5.3.2"
 
 dependencies {
   implementation("io.tsiglyar:github-adapter:1.0")
+  implementation("io.vertx:vertx-cassandra-client:$vertxVersion")
   implementation("io.vertx:vertx-mongo-client:$vertxVersion")
   implementation("io.vertx:vertx-web-client:$vertxVersion")
   implementation("io.vertx:vertx-rx-java2:$vertxVersion")
