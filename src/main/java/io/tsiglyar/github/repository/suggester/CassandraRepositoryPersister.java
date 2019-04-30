@@ -20,6 +20,8 @@ import static io.tsiglyar.github.repository.suggester.Repositories.toJson;
 
 public class CassandraRepositoryPersister implements RepositoryPersister {
 
+  private static String KEYSPACE = "repositories";
+
   private final CassandraClient client;
 
   public CassandraRepositoryPersister(Vertx vertx) {
@@ -30,7 +32,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   public Flowable<Repository> load(String language) {
     return client.rxQueryStream(select()
       .all()
-      .from("github", language)
+      .from(KEYSPACE, language)
     )
       .flatMapPublisher(CassandraRowStream::toFlowable)
       .onErrorResumeNext(createKeyspace()
@@ -40,7 +42,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   }
 
   private Completable createKeyspace() {
-    return client.rxExecute(SchemaBuilder.createKeyspace("repositories")
+    return client.rxExecute(SchemaBuilder.createKeyspace(KEYSPACE)
       .ifNotExists()
       .with()
       .replication(new JsonObject()
@@ -51,7 +53,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   }
 
   private Completable createTable(String name) {
-    return client.rxExecute(SchemaBuilder.createTable("repositories", name)
+    return client.rxExecute(SchemaBuilder.createTable(KEYSPACE, name)
       .ifNotExists()
       .addPartitionKey("name", text())
       .addColumn("description", text())
@@ -63,7 +65,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   @Override
   public Completable save(String language, List<Repository> repositories) {
     return client.rxExecute(batch(repositories.stream()
-      .map(repo -> insertInto("repositories", language)
+      .map(repo -> insertInto(KEYSPACE, language)
         .json(toJson(repo).encode()))
       .toArray(RegularStatement[]::new))
     )
