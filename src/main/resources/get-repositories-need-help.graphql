@@ -1,0 +1,11 @@
+query {
+  search(type: REPOSITORY, query: "language:%s help-wanted-issues:>0 sort:help-wanted-issues", first: 100) {
+    nodes {
+      ... on Repository {
+        name
+        description
+        url
+      }
+    }
+  }
+}

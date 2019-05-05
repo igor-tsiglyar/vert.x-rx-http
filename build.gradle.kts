@@ -18,6 +18,7 @@ dependencies {
   implementation("io.tsiglyar:github-adapter:1.0")
   implementation("io.vertx:vertx-cassandra-client:$vertxVersion")
   implementation("io.vertx:vertx-mongo-client:$vertxVersion")
+  implementation("io.vertx:vertx-web-api-contract:$vertxVersion")
   implementation("io.vertx:vertx-web-client:$vertxVersion")
   implementation("io.vertx:vertx-rx-java2:$vertxVersion")
   implementation("io.reactivex.rxjava2:rxjava:2.2.4")
