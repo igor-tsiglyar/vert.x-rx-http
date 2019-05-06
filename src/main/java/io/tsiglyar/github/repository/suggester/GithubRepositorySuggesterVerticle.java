@@ -92,8 +92,8 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       }
 
       return flow.toList()
-        .flatMapCompletable(repos -> persister.save(params.get("language"), repos))
-        .andThen(flow);
+        .flatMapPublisher(repos -> persister.save(params.get("language"), repos)
+          .andThen(Flowable.fromIterable(repos)));
     };
   }
 
