@@ -2,54 +2,47 @@ package io.tsiglyar.github.repository.suggester;
 
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.reactivex.Flowable;
-import io.reactivex.FlowableConverter;
-import io.reactivex.Scheduler;
-import io.reactivex.Single;
-import io.reactivex.SingleConverter;
-import io.reactivex.functions.Consumer;
 import io.tsiglyar.github.Repository;
-import io.tsiglyar.github.adapter.GithubAdapter;
+import io.vertx.circuitbreaker.CircuitBreaker;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
 import io.vertx.core.Context;
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.reactivex.SingleHelper;
-import io.vertx.reactivex.circuitbreaker.CircuitBreaker;
 import io.vertx.reactivex.core.AbstractVerticle;
 import io.vertx.reactivex.core.MultiMap;
-import io.vertx.reactivex.core.RxHelper;
 import io.vertx.reactivex.core.http.HttpServerRequest;
 import io.vertx.reactivex.ext.web.Router;
 import io.vertx.reactivex.ext.web.RoutingContext;
 import io.vertx.reactivex.ext.web.api.validation.HTTPRequestValidationHandler;
 
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static io.vertx.ext.web.api.validation.ParameterType.BOOL;
 import static io.vertx.ext.web.api.validation.ParameterType.GENERIC_STRING;
 import static java.lang.Boolean.parseBoolean;
+import static java.util.stream.Collectors.toList;
 
 public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
 
-  private GithubAdapter adapter;
+  private GithubGraphQLApiAdapter adapter;
   private RepositoryPersister persister;
   private CircuitBreaker breaker;
-  private Scheduler scheduler;
 
   @Override
   public void init(Vertx vertx, Context context) {
     super.init(vertx, context);
     this.adapter = new GithubGraphQLApiAdapter(this.vertx);
     this.persister = new MongoDbRepositoryPersister(this.vertx);
-    this.breaker = CircuitBreaker.create(this.getClass().getSimpleName() + "circuit-breaker", this.vertx,
+    this.breaker = CircuitBreaker.create(this.getClass().getSimpleName() + "circuit-breaker", vertx,
       new CircuitBreakerOptions()
         .setMaxFailures(1)
         .setFallbackOnFailure(true)
         .setResetTimeout(1000));
-    this.scheduler = RxHelper.blockingScheduler(this.vertx);
   }
 
   @Override
@@ -59,16 +52,17 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .handler(HTTPRequestValidationHandler.create()
         .addQueryParam("language", GENERIC_STRING, true)
         .addQueryParam("latest", BOOL, false))
-      .handler(context -> load(context)
-        .as(asPublisher(context))
-        .as(asJsonArray())
-        .doOnError(Throwable::printStackTrace)
-        .subscribeOn(scheduler)
-        .subscribe(
-          repos -> respond(HttpResponseStatus.OK, repos.encodePrettily()).accept(context.request()),
-          error -> respond(error).accept(context.request())
-        )
-      );
+      .handler(context -> {
+        Future<JsonArray> fut = load(context)
+          .compose(repositories -> cache(context, repositories)
+            .map(repositories)
+            .map(toJsonArray()));
+        if (fut.failed()) {
+          respond(fut.cause()).accept(context.request());
+        }
+
+        respond(HttpResponseStatus.OK, fut.result().encodePrettily()).accept(context.request());
+      });
 
     vertx.createHttpServer()
       .requestHandler(router)
@@ -88,30 +82,25 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .encodePrettily());
   }
 
-  private Single<List<Repository>> load(RoutingContext context) {
+  private Future<List<Repository>> load(RoutingContext context) {
     MultiMap params = context.queryParams();
 
-    return persister.load(params.get("language"))
-      .toList()
-      .flatMap(repositories -> parseBoolean(params.get("latest"))
-        ? breaker.rxExecuteCommandWithFallback(future ->
-        Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
-          .toList()
-          .subscribeOn(scheduler)
-          .subscribe(SingleHelper.toObserver(future.getDelegate())), anyError -> repositories)
-        : Single.just(repositories));
+    return Future.<List<Repository>>future(future -> persister.load(params.get("language"), future))
+      .compose(repositories -> parseBoolean(params.get("latest"))
+        ? Future.future(future -> breaker.executeCommandWithFallback(githubResultFuture ->
+          adapter.getRepositoriesToContribute(params.get("language"), githubResultFuture),
+          anyError -> repositories, future))
+        : Future.succeededFuture(repositories));
   }
 
-  private SingleConverter<List<Repository>, Flowable<Repository>> asPublisher(RoutingContext context) {
-    MultiMap params = context.queryParams();
-
-    return repositoryListSingle -> repositoryListSingle
-      .flatMapPublisher(repos -> persister.save(params.get("language"), repos)
-        .andThen(Flowable.fromIterable(repos)));
+  private Future<Void> cache(RoutingContext context, List<Repository> repositories) {
+    return Future.future(future -> persister.save(context.queryParams().get("language"),
+      repositories, future));
   }
 
-  private static FlowableConverter<Repository, Single<JsonArray>> asJsonArray() {
-    return flow -> flow.map(Repositories::toJson)
-      .collect(JsonArray::new, JsonArray::add);
+  private static Function<List<Repository>, JsonArray> toJsonArray() {
+    return list -> new JsonArray(list.stream()
+      .map(Repositories::toJson)
+      .collect(toList()));
   }
 }

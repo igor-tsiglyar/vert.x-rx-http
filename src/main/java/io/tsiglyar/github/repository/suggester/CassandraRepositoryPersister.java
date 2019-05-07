@@ -5,6 +5,8 @@ import com.datastax.driver.core.schemabuilder.SchemaBuilder;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.tsiglyar.github.Repository;
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.reactivex.cassandra.CassandraClient;
 import io.vertx.reactivex.cassandra.CassandraRowStream;
@@ -41,6 +43,11 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
       .map(row -> new Repository(row.getString("name"), row.getString("description"), row.getString("url")));
   }
 
+  @Override
+  public void load(String language, Handler<AsyncResult<List<Repository>>> handler) {
+
+  }
+
   private Completable createKeyspace() {
     return client.rxExecute(SchemaBuilder.createKeyspace(KEYSPACE)
       .ifNotExists()
@@ -70,6 +77,10 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
       .toArray(RegularStatement[]::new))
     )
       .ignoreElement();
+  }
+
+  @Override
+  public void save(String language, List<Repository> repositories, Handler<AsyncResult<Void>> handler) {
   }
 
 }
