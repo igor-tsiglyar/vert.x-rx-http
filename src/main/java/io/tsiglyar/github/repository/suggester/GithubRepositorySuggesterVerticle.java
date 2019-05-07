@@ -5,6 +5,7 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.tsiglyar.github.Repository;
 import io.vertx.circuitbreaker.CircuitBreaker;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
+import io.vertx.core.AsyncResult;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -52,17 +53,18 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .handler(HTTPRequestValidationHandler.create()
         .addQueryParam("language", GENERIC_STRING, true)
         .addQueryParam("latest", BOOL, false))
-      .handler(context -> {
-        Future<JsonArray> fut = load(context)
-          .compose(repositories -> cache(context, repositories)
-            .map(repositories)
-            .map(toJsonArray()));
-        if (fut.failed()) {
-          respond(fut.cause()).accept(context.request());
-        }
-
-        respond(HttpResponseStatus.OK, fut.result().encodePrettily()).accept(context.request());
-      });
+      .handler(context -> load(context)
+        .compose(repositories -> cache(context, repositories)
+          .map(repositories)
+          .map(toJsonArray()))
+        .setHandler(result -> {
+          if (result.failed()) {
+            respond(result.cause()).accept(context.request());
+          } else {
+            respond(HttpResponseStatus.OK, result.result().encodePrettily()).accept(context.request());
+          }
+        })
+      );
 
     vertx.createHttpServer()
       .requestHandler(router)
