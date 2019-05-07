@@ -4,6 +4,7 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.reactivex.Flowable;
 import io.reactivex.FlowableConverter;
+import io.reactivex.Scheduler;
 import io.reactivex.Single;
 import io.reactivex.SingleConverter;
 import io.reactivex.functions.Consumer;
@@ -19,6 +20,7 @@ import io.vertx.reactivex.SingleHelper;
 import io.vertx.reactivex.circuitbreaker.CircuitBreaker;
 import io.vertx.reactivex.core.AbstractVerticle;
 import io.vertx.reactivex.core.MultiMap;
+import io.vertx.reactivex.core.RxHelper;
 import io.vertx.reactivex.core.http.HttpServerRequest;
 import io.vertx.reactivex.ext.web.Router;
 import io.vertx.reactivex.ext.web.RoutingContext;
@@ -35,6 +37,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
   private GithubAdapter adapter;
   private RepositoryPersister persister;
   private CircuitBreaker breaker;
+  private Scheduler scheduler;
 
   @Override
   public void init(Vertx vertx, Context context) {
@@ -46,6 +49,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
         .setMaxFailures(1)
         .setFallbackOnFailure(true)
         .setResetTimeout(1000));
+    this.scheduler = RxHelper.blockingScheduler(this.vertx);
   }
 
   @Override
@@ -59,6 +63,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
         .as(asPublisher(context))
         .as(asJsonArray())
         .doOnError(Throwable::printStackTrace)
+        .subscribeOn(scheduler)
         .subscribe(
           repos -> respond(HttpResponseStatus.OK, repos.encodePrettily()).accept(context.request()),
           error -> respond(error).accept(context.request())
@@ -88,9 +93,11 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
 
     return persister.load(params.get("language"))
       .toList()
-      .flatMap(repositories -> parseBoolean(params.get("latest")) ? breaker.rxExecuteCommandWithFallback(future ->
+      .flatMap(repositories -> parseBoolean(params.get("latest"))
+        ? breaker.rxExecuteCommandWithFallback(future ->
         Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
           .toList()
+          .subscribeOn(scheduler)
           .subscribe(SingleHelper.toObserver(future.getDelegate())), anyError -> repositories)
         : Single.just(repositories));
   }
