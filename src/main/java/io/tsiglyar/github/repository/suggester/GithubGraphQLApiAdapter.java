@@ -1,7 +1,5 @@
 package io.tsiglyar.github.repository.suggester;
 
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.reactivex.Single;
 import io.tsiglyar.github.Repository;
 import io.tsiglyar.github.adapter.GithubAdapter;
 import io.vertx.core.json.JsonObject;
@@ -29,8 +27,6 @@ public class GithubGraphQLApiAdapter extends GithubRestAdapterBase implements Gi
       .flatMap(query -> authenticate(client.post(GRAPHQL_URI))
         .rxSendJsonObject(new JsonObject()
           .put("query", format(query, language))))
-      .filter(response -> response.statusCode() != HttpResponseStatus.FORBIDDEN.code())
-      .switchIfEmpty(Single.error(new RateLimitExceededException()))
       .flattenAsFlowable(response -> response.bodyAsJsonObject()
         .getJsonObject("data")
         .getJsonObject("search")

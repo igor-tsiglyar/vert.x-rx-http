@@ -1,7 +1,5 @@
 package io.tsiglyar.github.repository.suggester;
 
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.reactivex.Single;
 import io.tsiglyar.github.Repository;
 import io.tsiglyar.github.adapter.GithubAdapter;
 import io.vertx.core.json.JsonObject;
@@ -24,8 +22,6 @@ public class GithubRestApiAdapter extends GithubRestAdapterBase implements Githu
     return client.get(format(SEARCH_REPOS_NEED_HELP_URI_TEMPLATE, language))
       .putHeader("Content-Type", "application/json")
       .rxSend()
-      .filter(response -> response.statusCode() != HttpResponseStatus.FORBIDDEN.code())
-      .switchIfEmpty(Single.error(new RateLimitExceededException()))
       .flattenAsFlowable(response -> response.bodyAsJsonObject().getJsonArray("items"))
       .cast(JsonObject.class)
       .map(Repositories::fromJson);

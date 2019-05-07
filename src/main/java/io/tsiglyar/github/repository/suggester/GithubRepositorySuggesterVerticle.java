@@ -4,18 +4,19 @@ import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.reactivex.Flowable;
 import io.reactivex.FlowableConverter;
-import io.reactivex.FlowableTransformer;
-import io.reactivex.Scheduler;
 import io.reactivex.Single;
+import io.reactivex.SingleConverter;
 import io.reactivex.functions.Consumer;
 import io.tsiglyar.github.Repository;
 import io.tsiglyar.github.adapter.GithubAdapter;
+import io.vertx.circuitbreaker.CircuitBreakerOptions;
 import io.vertx.core.Context;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.reactivex.RxHelper;
+import io.vertx.reactivex.SingleHelper;
+import io.vertx.reactivex.circuitbreaker.CircuitBreaker;
 import io.vertx.reactivex.core.AbstractVerticle;
 import io.vertx.reactivex.core.MultiMap;
 import io.vertx.reactivex.core.http.HttpServerRequest;
@@ -23,21 +24,28 @@ import io.vertx.reactivex.ext.web.Router;
 import io.vertx.reactivex.ext.web.RoutingContext;
 import io.vertx.reactivex.ext.web.api.validation.HTTPRequestValidationHandler;
 
+import java.util.List;
+
 import static io.vertx.ext.web.api.validation.ParameterType.BOOL;
 import static io.vertx.ext.web.api.validation.ParameterType.GENERIC_STRING;
+import static java.lang.Boolean.parseBoolean;
 
 public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
 
   private GithubAdapter adapter;
   private RepositoryPersister persister;
-  private Scheduler scheduler;
+  private CircuitBreaker breaker;
 
   @Override
   public void init(Vertx vertx, Context context) {
     super.init(vertx, context);
     this.adapter = new GithubGraphQLApiAdapter(this.vertx);
     this.persister = new MongoDbRepositoryPersister(this.vertx);
-    this.scheduler = RxHelper.scheduler(vertx);
+    this.breaker = CircuitBreaker.create(this.getClass().getSimpleName() + "circuit-breaker", this.vertx,
+      new CircuitBreakerOptions()
+        .setMaxFailures(1)
+        .setFallbackOnFailure(true)
+        .setResetTimeout(1000));
   }
 
   @Override
@@ -46,17 +54,15 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
     router.route("/projects_to_contribute")
       .handler(HTTPRequestValidationHandler.create()
         .addQueryParam("language", GENERIC_STRING, true)
-        .addQueryParam("cache", BOOL, false))
-      .handler(context -> Single.just(context.request().getParam("language"))
-          .flatMapPublisher(language -> persister.load(language)
-            .switchIfEmpty(Flowable.fromPublisher(adapter.getRepositoriesToContribute(language))))
-          .compose(cache(context))
-          .as(asJsonArray())
-          .doOnError(Throwable::printStackTrace)
-          .subscribe(
-            repos -> respond(HttpResponseStatus.OK, repos.encodePrettily()).accept(context.request()),
-            error -> respond(error).accept(context.request())
-          )
+        .addQueryParam("latest", BOOL, false))
+      .handler(context -> load(context)
+        .as(asPublisher(context))
+        .as(asJsonArray())
+        .doOnError(Throwable::printStackTrace)
+        .subscribe(
+          repos -> respond(HttpResponseStatus.OK, repos.encodePrettily()).accept(context.request()),
+          error -> respond(error).accept(context.request())
+        )
       );
 
     vertx.createHttpServer()
@@ -72,29 +78,29 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
   }
 
   private Consumer<HttpServerRequest> respond(Throwable error) {
-    String content = new JsonObject()
+    return respond(HttpResponseStatus.INTERNAL_SERVER_ERROR, new JsonObject()
       .put("error", error.getMessage())
-      .encodePrettily();
-
-    if (error instanceof RateLimitExceededException) {
-      return respond(HttpResponseStatus.TOO_MANY_REQUESTS, content);
-    }
-
-    return respond(HttpResponseStatus.INTERNAL_SERVER_ERROR, content);
+      .encodePrettily());
   }
 
-  private FlowableTransformer<Repository, Repository> cache(RoutingContext context) {
+  private Single<List<Repository>> load(RoutingContext context) {
     MultiMap params = context.queryParams();
 
-    return flow -> {
-      if ("false".equals(params.get("cache"))) {
-        return flow;
-      }
+    return persister.load(params.get("language"))
+      .toList()
+      .flatMap(repositories -> parseBoolean(params.get("latest")) ? breaker.rxExecuteCommandWithFallback(future ->
+        Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
+          .toList()
+          .subscribe(SingleHelper.toObserver(future.getDelegate())), anyError -> repositories)
+        : Single.just(repositories));
+  }
 
-      return flow.toList()
-        .flatMapPublisher(repos -> persister.save(params.get("language"), repos)
-          .andThen(Flowable.fromIterable(repos)));
-    };
+  private SingleConverter<List<Repository>, Flowable<Repository>> asPublisher(RoutingContext context) {
+    MultiMap params = context.queryParams();
+
+    return repositoryListSingle -> repositoryListSingle
+      .flatMapPublisher(repos -> persister.save(params.get("language"), repos)
+        .andThen(Flowable.fromIterable(repos)));
   }
 
   private static FlowableConverter<Repository, Single<JsonArray>> asJsonArray() {
