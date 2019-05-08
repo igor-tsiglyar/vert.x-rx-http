@@ -55,7 +55,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
     router.route("/projects_to_contribute")
       .handler(HTTPRequestValidationHandler.create()
         .addQueryParam("language", GENERIC_STRING, true)
-        .addQueryParam("latest", BOOL, false))
+        .addQueryParam("fallback", BOOL, false))
       .handler(context -> load(context)
         .flatMap(repositories -> cache(context, repositories)
           .andThen(Single.just(repositories))
@@ -89,13 +89,16 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
 
     return persister.load(params.get("language"))
       .toList()
-      .flatMap(repositories -> parseBoolean(params.get("latest")) || repositories.isEmpty()
-        ? breaker.rxExecuteCommandWithFallback(fut ->
+      .flatMap(repositories -> breaker.rxExecuteCommandWithFallback(fut ->
           Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
             .toList()
-            .subscribe(SingleHelper.toObserver(fut.completer())), anyError -> repositories)
-        : Single.just(repositories)
-      );
+            .subscribe(SingleHelper.toObserver(fut.completer())), error -> {
+        if (!params.contains("fallback") || parseBoolean(params.get("fallback"))) {
+          return repositories;
+        }
+
+        throw new RuntimeException(error);
+      }));
   }
 
   private Completable cache(RoutingContext context, List<Repository> repositories) {
