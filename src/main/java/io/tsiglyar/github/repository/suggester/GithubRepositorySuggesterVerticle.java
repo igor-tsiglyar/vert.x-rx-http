@@ -2,16 +2,21 @@ package io.tsiglyar.github.repository.suggester;
 
 import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.reactivex.Completable;
+import io.reactivex.Flowable;
+import io.reactivex.Single;
+import io.reactivex.functions.Consumer;
+import io.reactivex.functions.Function;
 import io.tsiglyar.github.Repository;
-import io.vertx.circuitbreaker.CircuitBreaker;
+import io.tsiglyar.github.adapter.GithubAdapter;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
-import io.vertx.core.AsyncResult;
 import io.vertx.core.Context;
-import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.reactivex.SingleHelper;
+import io.vertx.reactivex.circuitbreaker.CircuitBreaker;
 import io.vertx.reactivex.core.AbstractVerticle;
 import io.vertx.reactivex.core.MultiMap;
 import io.vertx.reactivex.core.http.HttpServerRequest;
@@ -20,8 +25,6 @@ import io.vertx.reactivex.ext.web.RoutingContext;
 import io.vertx.reactivex.ext.web.api.validation.HTTPRequestValidationHandler;
 
 import java.util.List;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 import static io.vertx.ext.web.api.validation.ParameterType.BOOL;
 import static io.vertx.ext.web.api.validation.ParameterType.GENERIC_STRING;
@@ -30,7 +33,7 @@ import static java.util.stream.Collectors.toList;
 
 public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
 
-  private GithubGraphQLApiAdapter adapter;
+  private GithubAdapter adapter;
   private RepositoryPersister persister;
   private CircuitBreaker breaker;
 
@@ -38,8 +41,8 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
   public void init(Vertx vertx, Context context) {
     super.init(vertx, context);
     this.adapter = new GithubGraphQLApiAdapter(this.vertx);
-    this.persister = new MongoDbRepositoryPersister(this.vertx);
-    this.breaker = CircuitBreaker.create(this.getClass().getSimpleName() + "circuit-breaker", vertx,
+    this.persister = new InMemoryRepositoryPersister();
+    this.breaker = CircuitBreaker.create(this.getClass().getSimpleName() + "circuit-breaker", this.vertx,
       new CircuitBreakerOptions()
         .setMaxFailures(1)
         .setFallbackOnFailure(true)
@@ -54,16 +57,13 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
         .addQueryParam("language", GENERIC_STRING, true)
         .addQueryParam("latest", BOOL, false))
       .handler(context -> load(context)
-        .compose(repositories -> cache(context, repositories)
-          .map(repositories)
+        .flatMap(repositories -> cache(context, repositories)
+          .andThen(Single.just(repositories))
           .map(toJsonArray()))
-        .setHandler(result -> {
-          if (result.failed()) {
-            respond(result.cause()).accept(context.request());
-          } else {
-            respond(HttpResponseStatus.OK, result.result().encodePrettily()).accept(context.request());
-          }
-        })
+        .subscribe(
+          result -> respond(HttpResponseStatus.OK, result.encodePrettily()).accept(context.request()),
+          error -> respond(error).accept(context.request())
+        )
       );
 
     vertx.createHttpServer()
@@ -84,20 +84,22 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .encodePrettily());
   }
 
-  private Future<List<Repository>> load(RoutingContext context) {
+  private Single<List<Repository>> load(RoutingContext context) {
     MultiMap params = context.queryParams();
 
-    return Future.<List<Repository>>future(future -> persister.load(params.get("language"), future))
-      .compose(repositories -> parseBoolean(params.get("latest"))
-        ? Future.future(future -> breaker.executeCommandWithFallback(githubResultFuture ->
-          adapter.getRepositoriesToContribute(params.get("language"), githubResultFuture),
-          anyError -> repositories, future))
-        : Future.succeededFuture(repositories));
+    return persister.load(params.get("language"))
+      .toList()
+      .flatMap(repositories -> parseBoolean(params.get("latest")) || repositories.isEmpty()
+        ? breaker.rxExecuteCommandWithFallback(fut ->
+          Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
+            .toList()
+            .subscribe(SingleHelper.toObserver(fut.completer())), anyError -> repositories)
+        : Single.just(repositories)
+      );
   }
 
-  private Future<Void> cache(RoutingContext context, List<Repository> repositories) {
-    return Future.future(future -> persister.save(context.queryParams().get("language"),
-      repositories, future));
+  private Completable cache(RoutingContext context, List<Repository> repositories) {
+    return persister.save(context.queryParams().get("language"), repositories);
   }
 
   private static Function<List<Repository>, JsonArray> toJsonArray() {

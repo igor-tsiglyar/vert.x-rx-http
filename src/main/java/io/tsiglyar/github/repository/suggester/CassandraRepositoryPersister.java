@@ -5,8 +5,6 @@ import com.datastax.driver.core.schemabuilder.SchemaBuilder;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.tsiglyar.github.Repository;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.reactivex.cassandra.CassandraClient;
 import io.vertx.reactivex.cassandra.CassandraRowStream;
@@ -32,7 +30,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
 
   @Override
   public Flowable<Repository> load(String language) {
-    return client.rxQueryStream(select()
+    return Flowable.fromPublisher(RxHelpers.load(() -> client.rxQueryStream(select()
       .all()
       .from(KEYSPACE, language)
     )
@@ -40,12 +38,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
       .onErrorResumeNext(createKeyspace()
         .andThen(createTable(language))
         .andThen(Flowable.empty()))
-      .map(row -> new Repository(row.getString("name"), row.getString("description"), row.getString("url")));
-  }
-
-  @Override
-  public void load(String language, Handler<AsyncResult<List<Repository>>> handler) {
-
+      .map(row -> new Repository(row.getString("name"), row.getString("description"), row.getString("url")))));
   }
 
   private Completable createKeyspace() {
@@ -71,16 +64,12 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
 
   @Override
   public Completable save(String language, List<Repository> repositories) {
-    return client.rxExecute(batch(repositories.stream()
+    return RxHelpers.save(() -> client.rxExecute(batch(repositories.stream()
       .map(repo -> insertInto(KEYSPACE, language)
         .json(toJson(repo).encode()))
       .toArray(RegularStatement[]::new))
     )
-      .ignoreElement();
-  }
-
-  @Override
-  public void save(String language, List<Repository> repositories, Handler<AsyncResult<Void>> handler) {
+      .ignoreElement());
   }
 
 }

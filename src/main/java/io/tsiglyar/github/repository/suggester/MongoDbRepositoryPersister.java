@@ -4,9 +4,6 @@ import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.reactivex.internal.functions.Functions;
 import io.tsiglyar.github.Repository;
-import io.vertx.core.AsyncResult;
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mongo.BulkOperation;
 import io.vertx.reactivex.core.Vertx;
@@ -28,31 +25,17 @@ public class MongoDbRepositoryPersister implements RepositoryPersister {
 
   @Override
   public Flowable<Repository> load(String language) {
-    return client.rxFind(language, new JsonObject())
+    return Flowable.fromPublisher(RxHelpers.load(() -> client.rxFind(language, new JsonObject())
       .flattenAsFlowable(Functions.identity())
-      .map(Repositories::fromJson);
-  }
-
-  @Override
-  public void load(String language, Handler<AsyncResult<List<Repository>>> handler) {
-    client.find(language, new JsonObject(), result -> handler.handle(result.map(list -> list.stream()
-      .map(Repositories::fromJson)
-      .collect(toList()))));
+      .map(Repositories::fromJson)));
   }
 
   @Override
   public Completable save(String language, List<Repository> repositories) {
-    return client.rxBulkWrite(language, repositories.stream()
+    return RxHelpers.save(() -> client.rxBulkWrite(language, repositories.stream()
       .map(repo -> BulkOperation.createInsert(Repositories.toJson(repo)))
         .collect(toList()))
-      .ignoreElement();
-  }
-
-  @Override
-  public void save(String language, List<Repository> repositories, Handler<AsyncResult<Void>> handler) {
-    client.bulkWrite(language, repositories.stream()
-      .map(repo -> BulkOperation.createInsert(Repositories.toJson(repo)))
-      .collect(toList()), ignored -> handler.handle(Future.succeededFuture()));
+      .ignoreElement());
   }
 
 }
