@@ -10,11 +10,16 @@ public final class Repositories {
   }
 
   public static Repository fromJson(JsonObject json) {
-    return json.mapTo(Repository.class);
+    return new Repository(json.getString("name"),
+                          json.getString("description"),
+                          json.getString("url"));
   }
 
   public static JsonObject toJson(Repository repository) {
-    return JsonObject.mapFrom(repository);
+    return new JsonObject()
+      .put("name", repository.getName())
+      .put("description", repository.getDescription())
+      .put("url", repository.getUrl());
   }
 
 }
