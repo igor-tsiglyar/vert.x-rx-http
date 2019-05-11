@@ -94,7 +94,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .flatMap(repositories -> breaker.rxExecuteCommandWithFallback(fut ->
           Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
             .toList()
-            .subscribeOn(RxHelper.scheduler(vertx.getDelegate()))
+            .subscribeOn(RxHelper.blockingScheduler(vertx.getDelegate()))
             .subscribe(SingleHelper.toObserver(fut.completer())), error -> {
         if (!params.contains("fallback") || parseBoolean(params.get("fallback"))) {
           return repositories;

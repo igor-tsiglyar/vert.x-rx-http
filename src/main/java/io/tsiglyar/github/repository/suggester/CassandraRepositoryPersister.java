@@ -30,7 +30,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
 
   @Override
   public Flowable<Repository> load(String language) {
-    return Flowable.fromPublisher(RxHelpers.load(() -> client.rxQueryStream(select()
+    return client.rxQueryStream(select()
       .all()
       .from(KEYSPACE, language)
     )
@@ -38,7 +38,7 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
       .onErrorResumeNext(createKeyspace()
         .andThen(createTable(language))
         .andThen(Flowable.empty()))
-      .map(row -> new Repository(row.getString("name"), row.getString("description"), row.getString("url")))));
+      .map(row -> new Repository(row.getString("name"), row.getString("description"), row.getString("url")));
   }
 
   private Completable createKeyspace() {
@@ -64,12 +64,12 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
 
   @Override
   public Completable save(String language, List<Repository> repositories) {
-    return RxHelpers.save(() -> client.rxExecute(batch(repositories.stream()
+    return client.rxExecute(batch(repositories.stream()
       .map(repo -> insertInto(KEYSPACE, language)
         .json(toJson(repo).encode()))
       .toArray(RegularStatement[]::new))
     )
-      .ignoreElement());
+      .ignoreElement();
   }
 
 }

@@ -25,17 +25,17 @@ public class MongoDbRepositoryPersister implements RepositoryPersister {
 
   @Override
   public Flowable<Repository> load(String language) {
-    return Flowable.fromPublisher(RxHelpers.load(() -> client.rxFind(language, new JsonObject())
+    return client.rxFind(language, new JsonObject())
       .flattenAsFlowable(Functions.identity())
-      .map(Repositories::fromJson)));
+      .map(Repositories::fromJson);
   }
 
   @Override
   public Completable save(String language, List<Repository> repositories) {
-    return RxHelpers.save(() -> client.rxBulkWrite(language, repositories.stream()
+    return client.rxBulkWrite(language, repositories.stream()
       .map(repo -> BulkOperation.createInsert(Repositories.toJson(repo)))
         .collect(toList()))
-      .ignoreElement());
+      .ignoreElement();
   }
 
 }
