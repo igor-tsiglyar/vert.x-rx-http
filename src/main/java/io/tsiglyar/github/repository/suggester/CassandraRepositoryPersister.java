@@ -1,10 +1,15 @@
 package io.tsiglyar.github.repository.suggester;
 
+import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.HostDistance;
+import com.datastax.driver.core.PoolingOptions;
+import com.datastax.driver.core.ProtocolVersion;
 import com.datastax.driver.core.RegularStatement;
 import com.datastax.driver.core.schemabuilder.SchemaBuilder;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
 import io.tsiglyar.github.Repository;
+import io.vertx.cassandra.CassandraClientOptions;
 import io.vertx.core.json.JsonObject;
 import io.vertx.reactivex.cassandra.CassandraClient;
 import io.vertx.reactivex.cassandra.CassandraRowStream;
@@ -25,7 +30,14 @@ public class CassandraRepositoryPersister implements RepositoryPersister {
   private final CassandraClient client;
 
   public CassandraRepositoryPersister(Vertx vertx) {
-    client = CassandraClient.createNonShared(vertx);
+    client = CassandraClient.createNonShared(vertx, new CassandraClientOptions(Cluster.builder()
+        .withProtocolVersion(ProtocolVersion.V4)
+        .withPoolingOptions(new PoolingOptions()
+          .setConnectionsPerHost(HostDistance.LOCAL, 1, 1)
+          .setMaxRequestsPerConnection(HostDistance.LOCAL, 32768)
+          .setNewConnectionThreshold(HostDistance.LOCAL, 30000)
+          .setPoolTimeoutMillis(0)))
+      );
   }
 
   @Override
