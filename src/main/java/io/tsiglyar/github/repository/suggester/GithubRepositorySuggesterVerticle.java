@@ -15,6 +15,7 @@ import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.reactivex.RxHelper;
 import io.vertx.reactivex.SingleHelper;
 import io.vertx.reactivex.circuitbreaker.CircuitBreaker;
 import io.vertx.reactivex.core.AbstractVerticle;
@@ -41,7 +42,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
   public void init(Vertx vertx, Context context) {
     super.init(vertx, context);
     this.adapter = new GithubGraphQLApiAdapter(this.vertx);
-    this.persister = new MongoDbRepositoryPersister(this.vertx);
+    this.persister = new CassandraRepositoryPersister(this.vertx);
     this.breaker = CircuitBreaker.create(this.getClass().getSimpleName() + "circuit-breaker", this.vertx,
       new CircuitBreakerOptions()
         .setMaxFailures(1)
@@ -60,6 +61,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
         .flatMap(repositories -> cache(context, repositories)
           .andThen(Single.just(repositories))
           .map(toJsonArray()))
+        .subscribeOn(RxHelper.scheduler(vertx.getDelegate()))
         .subscribe(
           result -> respond(HttpResponseStatus.OK, result.encodePrettily()).accept(context.request()),
           error -> respond(error).accept(context.request())
@@ -92,6 +94,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .flatMap(repositories -> breaker.rxExecuteCommandWithFallback(fut ->
           Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
             .toList()
+            .subscribeOn(RxHelper.scheduler(vertx.getDelegate()))
             .subscribe(SingleHelper.toObserver(fut.completer())), error -> {
         if (!params.contains("fallback") || parseBoolean(params.get("fallback"))) {
           return repositories;
