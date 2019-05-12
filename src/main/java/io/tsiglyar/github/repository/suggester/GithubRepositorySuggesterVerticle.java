@@ -7,6 +7,7 @@ import io.reactivex.Flowable;
 import io.reactivex.Single;
 import io.reactivex.functions.Consumer;
 import io.reactivex.functions.Function;
+import io.reactivex.schedulers.Schedulers;
 import io.tsiglyar.github.Repository;
 import io.tsiglyar.github.adapter.GithubAdapter;
 import io.vertx.circuitbreaker.CircuitBreakerOptions;
@@ -15,7 +16,6 @@ import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpHeaders;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.reactivex.RxHelper;
 import io.vertx.reactivex.SingleHelper;
 import io.vertx.reactivex.circuitbreaker.CircuitBreaker;
 import io.vertx.reactivex.core.AbstractVerticle;
@@ -61,7 +61,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
         .flatMap(repositories -> cache(context, repositories)
           .andThen(Single.just(repositories))
           .map(toJsonArray()))
-        .subscribeOn(RxHelper.scheduler(vertx.getDelegate()))
+        .subscribeOn(Schedulers.io())
         .subscribe(
           result -> respond(HttpResponseStatus.OK, result.encodePrettily()).accept(context.request()),
           error -> respond(error).accept(context.request())
@@ -94,7 +94,7 @@ public class GithubRepositorySuggesterVerticle extends AbstractVerticle {
       .flatMap(repositories -> breaker.rxExecuteCommandWithFallback(fut ->
           Flowable.fromPublisher(adapter.getRepositoriesToContribute(params.get("language")))
             .toList()
-            .subscribeOn(RxHelper.scheduler(vertx.getDelegate()))
+            .subscribeOn(Schedulers.io())
             .subscribe(SingleHelper.toObserver(fut.completer())), error -> {
         if (!params.contains("fallback") || parseBoolean(params.get("fallback"))) {
           return repositories;
